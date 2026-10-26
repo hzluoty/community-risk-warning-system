@@ -43,7 +43,7 @@
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4",
     "recharts": "^3.10.1",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@electron-toolkit/preload": "^3.0.2",
