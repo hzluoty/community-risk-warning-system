@@ -41,7 +41,7 @@
     "mpegts.js": "^1.8.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.4",
+    "react-router-dom": "^7.18.5",
     "recharts": "^3.10.1",
     "zustand": "^5.0.16"
   },
