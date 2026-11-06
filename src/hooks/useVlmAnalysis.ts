@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore, type VlmStatus } from '@/store/useAppStore'
-import { VlmResponseError, analyzeFrameWithOllama } from '@/services/llm/ollamaClient'
+import { OLLAMA_MODEL, VlmResponseError } from '@/services/llm/ollamaClient'
+import { analyzeEventFrame } from '@/services/llm/eventClient'
+import { createEventFrameContext, DEFAULT_DECISION_CONFIG } from '@/services/events/decisionEngine'
+import type { EventFrameContext } from '@/types/riskEvents'
+import { asElectronApi, type ElectronApi } from '@/services/runtimeBridge'
 import { useFrameCapture } from './useFrameCapture'
 import { detect, getDetectorStatus } from '@/services/detection/objectDetector'
 import { http } from '@/services/http'
@@ -13,16 +17,6 @@ type VlmStatusHttpGet = (
   url: string,
   config: { timeout: number }
 ) => Promise<{ data?: { ready?: boolean; status?: unknown } }>
-
-interface ElectronApi {
-  getApiBase: () => Promise<string | undefined>
-  getOllamaStatus: () => Promise<{
-    ready: boolean
-    status: string
-    baseUrl: string
-    gpu: 'unknown'
-  }>
-}
 
 interface VlmConnectionStatus {
   ready: boolean
@@ -51,6 +45,8 @@ interface VlmAnalysisOptions {
   fallbackIntervalMs?: number
   /** Periodic VLM probe interval for unchanged scenes (ms) */
   idleProbeIntervalMs?: number
+  /** Maximum age of a frame/result, measured on the host monotonic clock (ms). */
+  resultFreshnessMs?: number
 }
 
 interface FinalizeVlmFrameOptions {
@@ -79,11 +75,12 @@ interface PlanVlmDispatchOptions {
   now: number
   lastVlmTime: number
   fallbackIntervalMs: number
+  periodicProbeDue?: boolean
 }
 
 interface VlmDispatchPlan {
   shouldSendVlm: boolean
-  reason: 'detector-failed' | 'object' | 'fallback' | 'skip'
+  reason: 'periodic-probe' | 'detector-failed' | 'object' | 'fallback' | 'skip'
 }
 
 export const VLM_CONNECTION_ERROR_MESSAGE = 'VLM 服务未连接，请确保后端服务已启动且模型已加载'
@@ -190,8 +187,9 @@ function normalizeRuntimeStatus(status: unknown, ready: boolean): VlmConnectionR
 export async function checkVlmConnectionStatus(
   options: CheckVlmConnectionStatusOptions = {}
 ): Promise<VlmConnectionStatus> {
-  const electronApi = options.electronApi
-    ?? (typeof window === 'undefined' ? undefined : window.electronAPI)
+  // 唯一桥接入口：Electron/Tauri/浏览器三态同接口（runtimeBridge）。
+  // 注入的 electronApi（测试用）优先；未注入时 runtimeBridge 自行探测。
+  const electronApi = options.electronApi ?? asElectronApi()
   const httpGet = options.httpGet ?? ((url, config) => http.get(url, config))
 
   const readProxyStatus = async (): Promise<VlmConnectionStatus | null> => {
@@ -211,19 +209,21 @@ export async function checkVlmConnectionStatus(
   if (electronApi) {
     try {
       const status = await electronApi.getOllamaStatus()
-      const ready = status.ready === true
-      const electronStatus = {
-        ready,
-        status: normalizeRuntimeStatus(status.status, ready),
-        source: 'electron'
-      } satisfies VlmConnectionStatus
+      if (status) {
+        const ready = status.ready === true
+        const electronStatus = {
+          ready,
+          status: normalizeRuntimeStatus(status.status, ready),
+          source: 'electron'
+        } satisfies VlmConnectionStatus
 
-      if (electronStatus.ready) {
-        return electronStatus
+        if (electronStatus.ready) {
+          return electronStatus
+        }
+
+        const proxyStatus = await readProxyStatus()
+        return proxyStatus?.ready ? proxyStatus : electronStatus
       }
-
-      const proxyStatus = await readProxyStatus()
-      return proxyStatus?.ready ? proxyStatus : electronStatus
     } catch {
       // Fall back to the proxy status endpoint in browser-like test/dev contexts.
     }
@@ -245,7 +245,16 @@ export function getDetectorRetryDelayMs(consecutiveFailures: number): number {
   return Math.min(DETECTOR_RETRY_BASE_MS * (2 ** (failures - 1)), DETECTOR_RETRY_MAX_MS)
 }
 
+export function isFreshVlmObservation(capturedAt: number | null, now: number, limit: number): boolean {
+  return capturedAt !== null && Number.isFinite(capturedAt) &&
+    Number.isFinite(now) && Number.isFinite(limit) && limit > 0 &&
+    now >= capturedAt && now - capturedAt <= limit
+}
+
 export function planVlmDispatch(options: PlanVlmDispatchOptions): VlmDispatchPlan {
+  if (options.periodicProbeDue) {
+    return { shouldSendVlm: true, reason: 'periodic-probe' }
+  }
   if (options.detectorFailed) {
     return {
       shouldSendVlm: true,
@@ -283,12 +292,16 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
     activeIntervalMs = 500,
     idleIntervalMs = 5000,
     fallbackIntervalMs = FALLBACK_INTERVAL_MS,
-    idleProbeIntervalMs = IDLE_PROBE_INTERVAL_MS
+    idleProbeIntervalMs = IDLE_PROBE_INTERVAL_MS,
+    resultFreshnessMs = 30000
   } = options
+
+  const freshnessLimitMs = Math.min(resultFreshnessMs, DEFAULT_DECISION_CONFIG.freshMs)
 
   const [serverReady, setServerReady] = useState(false)
   const analyzingRef = useRef(false)
   const lastVlmTimeRef = useRef(0)
+  const freshnessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const detectorFailedRef = useRef(false)
   const detectorFailureCountRef = useRef(0)
   const nextDetectorRetryAtRef = useRef(0)
@@ -299,7 +312,7 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
 
   const shouldCapture = canCaptureVlmFrames(enabled, captureEnabled, serverReady)
 
-  const { frameDataUrl, frameSequence, capturedAt, hasChanged, markConsumed } = useFrameCapture(videoRef, {
+  const { frameDataUrl, frameSequence, capturedAt, capturedMonotonicAt, hasChanged, markConsumed } = useFrameCapture(videoRef, {
     activeIntervalMs,
     idleIntervalMs,
     quality: 0.6,
@@ -309,6 +322,7 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
   })
 
   useEffect(() => {
+    if (freshnessTimerRef.current !== null) clearTimeout(freshnessTimerRef.current)
     useAppStore.getState().invalidateAnalysis()
     resetVlmAnalysisContext({
       controller: abortControllerRef.current,
@@ -407,6 +421,7 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
   useEffect(() => {
     return () => {
       analysisRunRef.current++
+      if (freshnessTimerRef.current !== null) clearTimeout(freshnessTimerRef.current)
       abortControllerRef.current?.abort()
       abortControllerRef.current = null
       useAppStore.getState().invalidateAnalysis()
@@ -417,15 +432,28 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
     if (!shouldCapture || !frameDataUrl || analyzingRef.current) return
     if (!shouldHandleFrameSequence(frameSequence, lastHandledSequenceRef.current)) return
     lastHandledSequenceRef.current = frameSequence
-    if (consumeUnchangedVlmFrame({
+    if (!isFreshVlmObservation(capturedMonotonicAt, performance.now(), freshnessLimitMs)) {
+      markConsumed()
+      return
+    }
+    const hasActiveEvent = useAppStore.getState().decisionState.events.some((event) =>
+      event.cameraId === cameraId && (event.lifecycle === 'active' || event.lifecycle === 'pending'))
+    const probeInterval = hasActiveEvent ? Math.min(5000, idleProbeIntervalMs) : idleProbeIntervalMs
+    const periodicProbeDue = lastVlmTimeRef.current === 0 ||
+      performance.now() - lastVlmTimeRef.current >= probeInterval
+    if (!periodicProbeDue && consumeUnchangedVlmFrame({
       frameDataUrl,
       hasChanged,
       markConsumed,
+      now: performance.now(),
       lastVlmTime: lastVlmTimeRef.current,
       idleProbeIntervalMs
     })) return
 
     let cancelled = false
+    let settled = false
+    let eventContext: EventFrameContext | null = null
+    let eventApplied = false
     analyzingRef.current = true
     const analysisRun = ++analysisRunRef.current
     const isCurrentRun = () => isCurrentVlmAnalysisRun(
@@ -439,7 +467,7 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
         if (!isCurrentRun()) return
         let detections: DetectionResult[] = []
 
-        const detectorAttemptTime = Date.now()
+        const detectorAttemptTime = performance.now()
         if (!detectorFailedRef.current || detectorAttemptTime >= nextDetectorRetryAtRef.current) {
           try {
             const video = videoRef.current
@@ -472,31 +500,67 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
         const dispatchPlan = planVlmDispatch({
           detectorFailed: detectorFailedRef.current,
           detections,
-          now: Date.now(),
+          now: performance.now(),
           lastVlmTime: lastVlmTimeRef.current,
-          fallbackIntervalMs
+          fallbackIntervalMs,
+          periodicProbeDue
         })
 
         if (!dispatchPlan.shouldSendVlm || !isCurrentRun()) return
 
-        lastVlmTimeRef.current = Date.now()
+        if (!isFreshVlmObservation(capturedMonotonicAt, performance.now(), freshnessLimitMs)) {
+          throw new VlmResponseError('待处理图像已过期，请等待新帧')
+        }
+        lastVlmTimeRef.current = performance.now()
         useAppStore.getState().setVlmStatus('analyzing')
 
         const controller = new AbortController()
         abortControllerRef.current = controller
 
         try {
-          const result = await analyzeFrameWithOllama(
-            frameDataUrl, cameraId, scene, controller.signal
+          eventContext = createEventFrameContext(cameraId, capturedAt ?? Date.now(), capturedMonotonicAt!, OLLAMA_MODEL)
+          const activeEvents = useAppStore.getState().decisionState.events
+          const result = await analyzeEventFrame(
+            frameDataUrl, cameraId, scene, eventContext, activeEvents, DEFAULT_DECISION_CONFIG.regions, controller.signal
           )
           if (isCurrentRun()) {
-            useAppStore.getState().setAnalysis(result.analysis, result.boxes, {
+            if (!isFreshVlmObservation(capturedMonotonicAt, performance.now(), freshnessLimitMs)) {
+              throw new VlmResponseError('VLM 响应已超过图像新鲜度上限，请等待新帧')
+            }
+            const store = useAppStore.getState()
+            store.applyEventObservation({ context: eventContext, receivedMonotonicAt: performance.now(), status: 'ok', output: result.output })
+            eventApplied = true
+            if (result.output.quality !== 'clear') throw new VlmResponseError('当前帧质量不确定，需要人工复核')
+            const cameraEvents = useAppStore.getState().decisionState.events.filter((event) => event.cameraId === cameraId &&
+              (event.lifecycle === 'active' || event.lifecycle === 'pending'))
+            const rank = { Normal: 0, C: 1, B: 2, A: 3 }
+            const highest = cameraEvents.reduce<typeof cameraEvents[number] | undefined>((best, event) =>
+              !best || rank[event.grade] > rank[best.grade] || (event.grade === best.grade && event.score > best.score) ? event : best, undefined)
+            const analysis = {
+              riskScore: highest?.score ?? 0, level: highest?.grade ?? 'Normal' as const,
+              hasRisk: result.output.candidates.length > 0 || cameraEvents.some((event) => event.grade !== 'Normal'),
+              confidence: result.output.candidates.length ? Math.min(...result.output.candidates.map((candidate) => candidate.confidence)) : 0,
+              summary: `${result.output.summary}；事件正式等级=${highest?.grade ?? 'Normal'}；事件观测=${highest?.health ?? '无活跃事件'}；待复核候选=${result.output.candidates.filter((candidate) => candidate.confidence < DEFAULT_DECISION_CONFIG.confidence).length}`,
+              evidenceTimeline: result.output.candidates.map((candidate) => `${eventContext!.frameId}：${candidate.observation}`),
+              breakdown: [], trend: []
+            }
+            const boxes = result.output.candidates.map((candidate) => ({ ...candidate.box, label: candidate.subtype, confidence: candidate.confidence, risk: true }))
+            useAppStore.getState().setAnalysis(analysis, boxes, {
               cameraId,
               modelSource: result.modelSource,
               capturedAt: capturedAt ?? Date.now(),
               frameDataUrl
             })
             useAppStore.getState().setVlmStatus('ready')
+            if (cameraEvents.some((event) => event.health !== 'fresh')) useAppStore.getState().invalidateAnalysis()
+            if (freshnessTimerRef.current !== null) clearTimeout(freshnessTimerRef.current)
+            const acceptedContext = useAppStore.getState().analysisContext
+            const remaining = freshnessLimitMs - (performance.now() - capturedMonotonicAt!)
+            freshnessTimerRef.current = setTimeout(() => {
+              if (useAppStore.getState().analysisContext === acceptedContext) {
+                useAppStore.getState().invalidateAnalysis()
+              }
+            }, Math.max(0, remaining))
           }
         } catch (err) {
           // Ignore aborted requests — not real errors
@@ -510,6 +574,13 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
         }
       } catch (err) {
         if (isCurrentRun()) {
+          if (freshnessTimerRef.current !== null) {
+            clearTimeout(freshnessTimerRef.current)
+            freshnessTimerRef.current = null
+          }
+          if (eventContext && !eventApplied) {
+            useAppStore.getState().applyEventObservation({ context: eventContext, receivedMonotonicAt: performance.now(), status: 'failure' })
+          }
           const failure = getVlmAnalysisFailure(err)
           useAppStore.getState().invalidateAnalysis()
           useAppStore.getState().setVlmStatus(
@@ -518,6 +589,7 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
           )
         }
       } finally {
+        settled = true
         if (analysisRunRef.current === analysisRun) {
           finalizeVlmFrame({
             markConsumed,
@@ -531,11 +603,22 @@ export function useVlmAnalysis(options: VlmAnalysisOptions) {
 
     return () => {
       cancelled = true
+      if (!settled && analysisRunRef.current === analysisRun) {
+        analysisRunRef.current++
+        abortControllerRef.current?.abort()
+        abortControllerRef.current = null
+        finalizeVlmFrame({
+          markConsumed,
+          releaseAnalysisLock: () => { analyzingRef.current = false }
+        })
+      }
     }
   }, [
     frameDataUrl,
     frameSequence,
     capturedAt,
+    capturedMonotonicAt,
+    resultFreshnessMs,
     cameraId,
     scene,
     markConsumed,

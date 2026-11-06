@@ -1,0 +1,1356 @@
+{
+  "description": "JS 代理与 Rust 代理共享的行为契约（golden 用例）：同一份文件被 server/proxyContract.test.js（打 Express app）与 src-tauri 的 cargo 测试（tower oneshot 打 axum 路由）同时消费。改动行为时必须两侧同时改，否则其中一侧测试变红。",
+  "configs": {
+    "default": {
+      "env": {}
+    },
+    "noVlm": {
+      "env": {
+        "VLM_PORT": "1"
+      }
+    },
+    "withToken": {
+      "env": {
+        "LOCAL_PROXY_TOKEN": "{{SECRET_mfhwjmhr}}"
+      }
+    },
+    "tightChatLimit": {
+      "env": {
+        "LOCAL_PROXY_TOKEN": "{{SECRET_mfhwjmhr}}",
+        "CHAT_REQUESTS_PER_MINUTE": "1",
+        "AUTH_ATTEMPTS_PER_MINUTE": "0"
+      }
+    },
+    "tightAuthLimit": {
+      "env": {
+        "LOCAL_PROXY_TOKEN": "{{SECRET_mfhwjmhr}}",
+        "AUTH_ATTEMPTS_PER_MINUTE": "1",
+        "CHAT_REQUESTS_PER_MINUTE": "0"
+      }
+    },
+    "smallPayload": {
+      "env": {
+        "MAX_CHAT_MESSAGES": "2",
+        "MAX_CHAT_TOKENS": "100"
+      }
+    },
+    "tinyBody": {
+      "env": {
+        "LOCAL_PROXY_TOKEN": "{{SECRET_mfhwjmhr}}",
+        "REQUEST_BODY_LIMIT": "1b",
+        "AUTH_ATTEMPTS_PER_MINUTE": "0",
+        "CHAT_REQUESTS_PER_MINUTE": "0"
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "health-reports-service-metadata",
+      "config": "default",
+      "steps": [
+        {
+          "method": "GET",
+          "path": "{{API_HEALTH_ROUTE}}",
+          "headers": {
+            "Origin": "http://localhost:5173"
+          },
+          "expectedStatus": 200,
+          "expectedBody": {
+            "ok": true,
+            "service": "community-risk-warning-proxy",
+            "qwenConfigured": false,
+            "cloudFallbackEnabled": false,
+            "model": "qwen3-vl-plus"
+          },
+          "ignoreBodyKeys": [
+            "timestamp"
+          ],
+          "expectedHeaders": {
+            "access-control-expose-headers": "X-VLM-Source"
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-requires-messages",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {},
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "messages must be a non-empty array",
+              "type": "invalid_request"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-rejects-streaming",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {}
+            ],
+            "stream": true
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "streaming responses are not supported",
+              "type": "invalid_request"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-rejects-disallowed-token-limit-field",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {}
+            ],
+            "max_completion_tokens": 10
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "max_completion_tokens is not supported; use max_tokens",
+              "type": "invalid_request"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-rejects-n-not-one",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {}
+            ],
+            "n": 2
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "n must be 1",
+              "type": "invalid_request"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-rejects-message-count-over-limit",
+      "config": "smallPayload",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {},
+              {},
+              {}
+            ]
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "messages exceeds the configured limit",
+              "type": "invalid_request"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-rejects-max-tokens-over-limit",
+      "config": "smallPayload",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {}
+            ],
+            "max_tokens": 101
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "max_tokens exceeds the configured limit",
+              "type": "invalid_request"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-requires-configuration",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "ok"
+              }
+            ]
+          },
+          "expectedStatus": 500,
+          "expectedBody": {
+            "error": {
+              "message": "QWEN_BASE_URL 或 QWEN_API_KEY 未配置，请检查 .env",
+              "type": "configuration_error"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-blocks-wrong-token",
+      "config": "withToken",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "headers": {
+            "{{LOCAL_PROXY_TOKEN_HEADER}}": "wrong"
+          },
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "ok"
+              }
+            ]
+          },
+          "expectedStatus": 403,
+          "expectedBody": {
+            "error": {
+              "message": "本地代理请求未授权",
+              "type": "forbidden"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-blocks-unauthorized-before-oversized-body-parse",
+      "config": "tinyBody",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "headers": {
+            "{{LOCAL_PROXY_TOKEN_HEADER}}": "wrong"
+          },
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "body larger than one byte"
+              }
+            ]
+          },
+          "expectedStatus": 403
+        }
+      ]
+    },
+    {
+      "name": "chat-rate-limits-second-authorized-request",
+      "config": "tightChatLimit",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "headers": {
+            "{{LOCAL_PROXY_TOKEN_HEADER}}": "{{TOKEN}}"
+          },
+          "body": {},
+          "expectedStatus": 400
+        },
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "headers": {
+            "{{LOCAL_PROXY_TOKEN_HEADER}}": "{{TOKEN}}"
+          },
+          "body": {},
+          "expectedStatus": 429,
+          "expectedBody": {
+            "error": {
+              "message": "请求过于频繁，请稍后再试",
+              "type": "rate_limit"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "auth-rate-limits-repeated-failures-without-penalizing-valid-token",
+      "config": "tightAuthLimit",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "headers": {
+            "{{LOCAL_PROXY_TOKEN_HEADER}}": "wrong"
+          },
+          "body": {},
+          "expectedStatus": 403
+        },
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "headers": {
+            "{{LOCAL_PROXY_TOKEN_HEADER}}": "wrong-again"
+          },
+          "body": {},
+          "expectedStatus": 429,
+          "expectedBody": {
+            "error": {
+              "message": "未授权请求过于频繁，请稍后再试",
+              "type": "auth_rate_limit"
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "headers": {
+            "{{LOCAL_PROXY_TOKEN_HEADER}}": "{{TOKEN}}"
+          },
+          "body": {},
+          "expectedStatus": 400
+        }
+      ]
+    },
+    {
+      "name": "ollama-status-reports-error-when-vlm-unreachable",
+      "config": "noVlm",
+      "steps": [
+        {
+          "method": "GET",
+          "path": "{{OLLAMA_STATUS_ROUTE}}",
+          "expectedStatus": 200,
+          "expectedBody": {
+            "ready": false,
+            "status": "error",
+            "gpu": "unknown",
+            "source": "local"
+          }
+        }
+      ]
+    },
+    {
+      "name": "tasks-roundtrip-stores-and-reads-results",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{TASKS_INGEST_ROUTE}}",
+          "body": {
+            "type": "task",
+            "taskId": "traffic_light",
+            "location": "traffic_light_zone",
+            "capturedAt": 1756370000000,
+            "result": {
+              "task": "traffic_light",
+              "state": "green",
+              "announcement": "前方交通灯为绿色，可以通行。"
+            },
+            "boxes": []
+          },
+          "expectedStatus": 200,
+          "expectedBody": {
+            "ok": true,
+            "stored": "task"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "{{TASKS_RESULTS_ROUTE}}",
+          "expectedStatus": 200,
+          "expectedBody": {
+            "ok": true,
+            "count": 1
+          },
+          "matchBodySubset": true
+        },
+        {
+          "method": "GET",
+          "path": "{{TASKS_RESULTS_ROUTE}}/traffic_light",
+          "expectedStatus": 200,
+          "expectedBody": {
+            "ok": true
+          },
+          "matchBodySubset": true
+        },
+        {
+          "method": "GET",
+          "path": "{{TASKS_RESULTS_ROUTE}}/parking",
+          "expectedStatus": 404,
+          "expectedBody": {
+            "ok": false,
+            "error": "暂无该任务结果"
+          }
+        }
+      ]
+    },
+    {
+      "name": "tasks-run-event-roundtrip",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{TASKS_INGEST_ROUTE}}",
+          "body": {
+            "type": "run",
+            "status": "running",
+            "startedAt": 1
+          },
+          "expectedStatus": 200,
+          "expectedBody": {
+            "ok": true,
+            "stored": "run"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "{{TASKS_RUN_ROUTE}}",
+          "expectedStatus": 200,
+          "expectedBody": {
+            "ok": true,
+            "run": {
+              "type": "run",
+              "status": "running",
+              "startedAt": 1
+            }
+          },
+          "ignoreBodyKeys": [
+            "receivedAt"
+          ],
+          "matchBodySubset": false
+        }
+      ]
+    },
+    {
+      "name": "tasks-rejects-unknown-task-id",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{TASKS_INGEST_ROUTE}}",
+          "body": {
+            "type": "task",
+            "taskId": "nope"
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "ok": false,
+            "error": "未知 taskId：nope"
+          }
+        }
+      ]
+    },
+    {
+      "name": "tasks-malformed-json-returns-json-400",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{TASKS_INGEST_ROUTE}}",
+          "rawBody": "{\"type\":\"task\",broken",
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "type": "invalid_request"
+            }
+          },
+          "matchBodySubset": true
+        }
+      ]
+    },
+    {
+      "name": "tasks-require-token-when-configured",
+      "config": "withToken",
+      "steps": [
+        {
+          "method": "GET",
+          "path": "{{TASKS_RESULTS_ROUTE}}",
+          "expectedStatus": 403,
+          "expectedBody": {
+            "error": {
+              "message": "本地代理请求未授权",
+              "type": "forbidden"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "{{TASKS_RESULTS_ROUTE}}",
+          "headers": {
+            "{{LOCAL_PROXY_TOKEN_HEADER}}": "{{TOKEN}}"
+          },
+          "expectedStatus": 200,
+          "expectedBody": {
+            "ok": true,
+            "count": 0,
+            "results": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "tasks-envelope-byte-budget-rejects-multibyte-payload-under-character-limit",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{TASKS_INGEST_ROUTE}}",
+          "body": {
+            "type": "task",
+            "taskId": "people_count",
+            "location": "zone",
+            "capturedAt": 1756370000000,
+            "result": {
+              "task": "people_count",
+              "announcement": "正常"
+            },
+            "boxes": [
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              },
+              {
+                "x": 0.1,
+                "y": 0.1,
+                "width": 0.2,
+                "height": 0.2,
+                "label": "警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警警",
+                "confidence": 0.9
+              }
+            ]
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "ok": false,
+            "error": "信封负载超过大小限制"
+          }
+        }
+      ]
+    }
+  ]
+}

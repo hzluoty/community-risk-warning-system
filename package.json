@@ -22,10 +22,18 @@
     "build:pages": "node scripts/generate-esa-env.js && vite build --outDir dist-pages",
     "dev:server": "node server/index.js",
     "dev:all": "concurrently \"npm run dev:web\" \"npm run dev:server\"",
+    "gen:contract": "node scripts/generate-shared-contract.js",
+    "check:contract": "node scripts/check-shared-contract.js",
+    "build:renderer": "vite build",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "node scripts/tauri-build.mjs",
+    "prepare-vlm": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-vlm-resources.ps1",
     "typecheck": "tsc -p tsconfig.app.json --noEmit --pretty false --tsBuildInfoFile node_modules/.cache/tsconfig.app.typecheck.tsbuildinfo && tsc -p tsconfig.node.json --noEmit --pretty false --tsBuildInfoFile node_modules/.cache/tsconfig.node.typecheck.tsbuildinfo && tsc -p electron/tsconfig.json --noEmit --pretty false --tsBuildInfoFile node_modules/.cache/electron.typecheck.tsbuildinfo",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepackage": "npm run download-runtime"
+    "prepackage": "npm run download-runtime",
+    "divergence-report": "node -e \"console.log(require('fs').readFileSync('shared/divergences.md','utf8'))\""
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
@@ -58,6 +66,7 @@
     "electron": "^45.2.3",
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
+    "@tauri-apps/cli": "^2",
     "typescript": "^5.9.3",
     "vite": "^8.3.5",
     "vitest": "^5.1.0"

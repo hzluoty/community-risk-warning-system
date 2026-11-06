@@ -1,0 +1,32 @@
+[package]
+name = "crws-proxy"
+version.workspace = true
+edition.workspace = true
+description = "险封·社区风险预警平台 —— 本地代理（axum）：Qwen 转发 / 本地 VLM 转发 / 任务回传通道。零 tauri 依赖；VLM 进程监管在独立 crws-vlm crate，本 crate 只持只读信任句柄。"
+
+[lib]
+name = "crws_proxy"
+path = "src/lib.rs"
+
+# 独立代理进程：`cargo run --bin community-proxy`（对齐旧 `npm run dev:server`）
+[[bin]]
+name = "community-proxy"
+path = "src/bin/community-proxy.rs"
+
+[dependencies]
+crws-core = { path = "../core" }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+# preserve_order：白名单判定与夹具断言一律用 serde_json::to_string 的规范化文本比较
+# （复刻 JS JSON.stringify 的键序敏感语义）；注意 IndexMap 的 PartialEq 是顺序无关的，
+# 禁止用 Value == Value 判键序。
+serde_json = { version = "1", features = ["preserve_order"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+url = "2"
+dotenvy = "0.15"
+futures-util = "0.3"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

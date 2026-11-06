@@ -1,0 +1,9 @@
+[package]
+name = "crws-core"
+version.workspace = true
+edition.workspace = true
+description = "险封·社区风险预警平台 —— 底层共享：env 解析（shared/envParsers.js 同语义）、VLM 运行配置、信任态读写类型。零 tauri、零 axum。依赖方向：core ← proxy、core ← vlm（proxy 与 vlm 互不依赖）。"
+
+[dependencies]
+serde_json = "1"
+

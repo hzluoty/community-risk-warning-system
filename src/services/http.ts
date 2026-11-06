@@ -1,16 +1,7 @@
 import axios, { AxiosHeaders } from 'axios'
+import { asElectronApi, type ElectronApi } from '@/services/runtimeBridge'
 
-export interface ElectronApi {
-  getApiBase: () => Promise<string | undefined>
-  getApiAuthHeaders?: () => Promise<Record<string, string> | undefined>
-  getOllamaStatus: () => Promise<{ ready: boolean; status: string; baseUrl: string; gpu: 'unknown' }>
-}
-
-declare global {
-  interface Window {
-    electronAPI?: ElectronApi
-  }
-}
+export type { ElectronApi }
 
 interface ApiBaseResolverOptions {
   envBase?: string
@@ -116,12 +107,13 @@ export function createApiAuthHeaderResolver(options: ApiAuthHeaderResolverOption
 
 const apiBaseResolver = createApiBaseResolver({
   envBase: import.meta.env.VITE_API_BASE_URL || undefined,
-  electronApi: typeof window === 'undefined' ? undefined : window.electronAPI
+  electronApi: asElectronApi()
 })
 
 const apiAuthHeaderResolver = createApiAuthHeaderResolver({
-  electronApi: typeof window === 'undefined' ? undefined : window.electronAPI
+  electronApi: asElectronApi()
 })
+
 
 export const http = axios.create({
   timeout: 120000

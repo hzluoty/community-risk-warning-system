@@ -1,11 +1,3 @@
-export type OllamaRuntimeStatus = 'starting' | 'loading' | 'ready' | 'error';
-export type GpuAvailability = 'unknown';
-
-export interface OllamaHealthStatus {
-  ready: boolean;
-  status: OllamaRuntimeStatus;
-  gpu: GpuAvailability;
-}
-
-export declare const GPU_AVAILABILITY_UNKNOWN: GpuAvailability;
-export declare function resolveOllamaHealthStatus(statusCode: number): OllamaHealthStatus;
+// 类型与规则本体在 shared/ollamaHealthStatus.js —— 此处再导出兼容旧路径。
+export type { GpuAvailability, OllamaHealthStatus, OllamaRuntimeStatus } from '../shared/ollamaHealthStatus.js';
+export { GPU_AVAILABILITY_UNKNOWN, resolveOllamaHealthStatus } from '../shared/ollamaHealthStatus.js';

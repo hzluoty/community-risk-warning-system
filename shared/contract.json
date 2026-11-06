@@ -1,0 +1,538 @@
+{
+  "apiRoutes": {
+    "health": "/api/health",
+    "qwenChatCompletions": "/api/qwen/chat/completions",
+    "ollamaChatCompletions": "/api/ollama/chat/completions",
+    "ollamaStatus": "/api/ollama/status"
+  },
+  "tasksRoutes": {
+    "prefix": "/api/tasks",
+    "ingest": "/api/tasks/ingest",
+    "results": "/api/tasks/results",
+    "run": "/api/tasks/run"
+  },
+  "headers": {
+    "localProxyToken": "x-local-proxy-token"
+  },
+  "routePlaceholders": {
+    "{{API_HEALTH_ROUTE}}": "/api/health",
+    "{{QWEN_CHAT_COMPLETIONS_ROUTE}}": "/api/qwen/chat/completions",
+    "{{OLLAMA_CHAT_COMPLETIONS_ROUTE}}": "/api/ollama/chat/completions",
+    "{{OLLAMA_STATUS_ROUTE}}": "/api/ollama/status",
+    "{{TASKS_INGEST_ROUTE}}": "/api/tasks/ingest",
+    "{{TASKS_RESULTS_ROUTE}}": "/api/tasks/results",
+    "{{TASKS_RUN_ROUTE}}": "/api/tasks/run",
+    "{{LOCAL_PROXY_TOKEN_HEADER}}": "x-local-proxy-token",
+    "{{TOKEN}}": ""
+  },
+  "vlmRuntime": {
+    "description": "VLM 进程监管参数（llama-server 启动参数模板 / 子进程 env 白名单 / 退避与轮询常量 / 必需运行时文件）—— TS（electron/ollamaManager.ts）与 Rust（crates/vlm）共读同一份，消灭 divergences.md 登记的无断言分叉。",
+    "restartPolicy": {
+      "maxRestartAttempts": 3,
+      "restartDelayMs": 3000,
+      "resourcePollIntervalMs": 5000
+    },
+    "childEnvWhitelist": {
+      "common": [
+        "PATH",
+        "TEMP",
+        "TMP",
+        "CUDA_PATH",
+        "CUDA_VISIBLE_DEVICES",
+        "OMP_NUM_THREADS"
+      ],
+      "windows": [
+        "SYSTEMROOT",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT"
+      ],
+      "prefixes": [
+        "GGML_",
+        "CUDA_PATH_V"
+      ],
+      "apiKeyVariable": "LLAMA_API_KEY",
+      "unix": [
+        "HOME",
+        "TMPDIR",
+        "LD_LIBRARY_PATH",
+        "DYLD_LIBRARY_PATH",
+        "LANG",
+        "LC_ALL"
+      ]
+    },
+    "llamaServerArgs": {
+      "argsTemplate": [
+        {
+          "flag": "-m",
+          "source": "modelPath"
+        },
+        {
+          "flag": "-a",
+          "source": "modelAlias"
+        },
+        {
+          "flag": "--port",
+          "source": "port"
+        },
+        {
+          "flag": "--host",
+          "source": "host"
+        },
+        {
+          "flag": "-ngl",
+          "source": "gpuLayers"
+        },
+        {
+          "flag": "-c",
+          "source": "contextSize"
+        },
+        {
+          "flag": "-b",
+          "source": "batchSize"
+        },
+        {
+          "flag": "-ub",
+          "source": "ubatchSize"
+        },
+        {
+          "flag": "--flash-attn",
+          "value": "on"
+        },
+        {
+          "flag": "--cache-type-k",
+          "source": "cacheTypeK"
+        },
+        {
+          "flag": "--cache-type-v",
+          "source": "cacheTypeV"
+        },
+        {
+          "flag": "--no-warmup"
+        },
+        {
+          "flag": "--cont-batching"
+        },
+        {
+          "flag": "--jinja"
+        },
+        {
+          "flag": "--reasoning",
+          "value": "off"
+        }
+      ],
+      "mmprojFlag": "--mmproj",
+      "mmprojPrecedenceWarning": "VLM_MTP_ENABLED=true 与 mmproj 视觉编码器互斥；已保留视觉能力并忽略 MTP。 如需 MTP 文本加速，请改用无 mmproj 的纯文本模型，并使用支持 MTP 的 llama.cpp 构建。",
+      "mtpArgs": [
+        {
+          "flag": "--spec-type",
+          "value": "draft-mtp"
+        },
+        {
+          "flag": "--spec-draft-n-max",
+          "source": "mtpDraftTokens"
+        }
+      ]
+    },
+    "requiredRuntimeFiles": {
+      "serverExecutable": "llama-server.exe",
+      "cudaDlls": [
+        "ggml-cuda.dll",
+        "cudart64_12.dll"
+      ]
+    }
+  },
+  "vlmModel": {
+    "defaultAlias": "qwen3.5-4b-mtp:q4_k_m",
+    "defaultQwenApiModel": "qwen3-vl-plus",
+    "modelFile": "Qwen3.5-4B-Q4_K_M.gguf",
+    "mmprojFile": "mmproj-BF16.gguf",
+    "hasMmproj": true,
+    "modelSha256": "3874209241c9a397e2f62cd3f70f80fd2dfbf0dfccb6838416bdb48a714e8630",
+    "mmprojSha256": "169ee40fb1e234ff38b2d814eb8633611a54b6f941f11b700d96dec02cb44ddf",
+    "llamaCppVersion": "b9484",
+    "llamaCppCudaVersion": "12.4"
+  },
+  "vlmResponseFormat": {
+    "type": "json_schema",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hasRisk",
+        "riskScore",
+        "level",
+        "confidence",
+        "hasLoitering",
+        "hasGathering",
+        "hasFallen",
+        "summary",
+        "evidenceTimeline",
+        "breakdown",
+        "detectionBoxes"
+      ],
+      "properties": {
+        "hasRisk": {
+          "type": "boolean"
+        },
+        "riskScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "hasLoitering": {
+          "type": "boolean"
+        },
+        "hasGathering": {
+          "type": "boolean"
+        },
+        "hasFallen": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "必须是单一字符串而非对象或数组；用 2-4 句中文依次说明画面情况、可见判断依据和风险结论，不得只回答是否有风险"
+        },
+        "evidenceTimeline": {
+          "type": "array",
+          "description": "无风险时必须为空数组；有风险时仅记录当前帧可见证据",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "breakdown": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "label",
+              "value"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        },
+        "detectionBoxes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height",
+              "label",
+              "confidence",
+              "risk"
+            ],
+            "properties": {
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "width": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "height": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "risk": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "eventResponseFormat": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "community_event_observation",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "quality",
+          "summary",
+          "candidates",
+          "eventChecks"
+        ],
+        "properties": {
+          "quality": {
+            "type": "string",
+            "enum": [
+              "clear",
+              "uncertain"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "candidates": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "category",
+                "subtype",
+                "confidence",
+                "scores",
+                "observation",
+                "evidenceFrameIds",
+                "box",
+                "regionId"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 600
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "fire",
+                    "security",
+                    "assistance",
+                    "environment",
+                    "facility"
+                  ]
+                },
+                "subtype": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 600
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "scores": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "consequence",
+                    "exposure",
+                    "urgency"
+                  ],
+                  "properties": {
+                    "consequence": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "exposure": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "urgency": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  }
+                },
+                "observation": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 600
+                },
+                "evidenceFrameIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 600
+                  }
+                },
+                "box": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "width": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "height": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  }
+                },
+                "regionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "eventChecks": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "eventId",
+                "verdict",
+                "regionVisible",
+                "evidenceFrameIds"
+              ],
+              "properties": {
+                "eventId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 600
+                },
+                "verdict": {
+                  "type": "string",
+                  "enum": [
+                    "present",
+                    "absent",
+                    "unknown"
+                  ]
+                },
+                "regionVisible": {
+                  "type": "boolean"
+                },
+                "evidenceFrameIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 600
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "qwenEndpoints": [
+    {
+      "key": "local-lm-studio",
+      "baseUrl": "http://127.0.0.1:1234/v1"
+    },
+    {
+      "key": "local-lm-studio-hostname",
+      "baseUrl": "http://localhost:1234/v1"
+    },
+    {
+      "key": "local-ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1"
+    },
+    {
+      "key": "local-ollama-hostname",
+      "baseUrl": "http://localhost:11434/v1"
+    },
+    {
+      "key": "dashscope-cn",
+      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    },
+    {
+      "key": "dashscope-intl",
+      "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    },
+    {
+      "key": "dashscope-us",
+      "baseUrl": "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
+    },
+    {
+      "key": "bigmodel",
+      "baseUrl": "https://open.bigmodel.cn/api/paas/v4"
+    }
+  ],
+  "competitionTaskIds": [
+    "traffic_light",
+    "people_count",
+    "sign_reading",
+    "trash_bin",
+    "building_fire",
+    "building_temperature",
+    "gauge_reading",
+    "license_plate",
+    "ebike_status",
+    "parking"
+  ]
+}

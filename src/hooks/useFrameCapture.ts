@@ -19,6 +19,7 @@ interface FrameCaptureResult {
   frameDataUrl: string | null
   frameSequence: number
   capturedAt: number | null
+  capturedMonotonicAt: number | null
   isProcessing: boolean
   captureCount: number
   error: string | null
@@ -30,6 +31,7 @@ interface CapturedFrame {
   frameDataUrl: string | null
   frameSequence: number
   capturedAt: number | null
+  capturedMonotonicAt: number | null
   hasChanged: boolean
 }
 
@@ -37,7 +39,8 @@ export function createCapturedFrame(
   previousSequence: number,
   frameDataUrl: string,
   hasChanged: boolean,
-  capturedAt = Date.now()
+  capturedAt = Date.now(),
+  capturedMonotonicAt = performance.now()
 ): CapturedFrame {
   if (!Number.isSafeInteger(previousSequence) || previousSequence < 0 || previousSequence >= Number.MAX_SAFE_INTEGER) {
     throw new Error('Frame sequence is out of range')
@@ -47,6 +50,7 @@ export function createCapturedFrame(
     frameDataUrl,
     frameSequence: previousSequence + 1,
     capturedAt,
+    capturedMonotonicAt,
     hasChanged
   }
 }
@@ -73,6 +77,7 @@ export function useFrameCapture(
     frameDataUrl: null,
     frameSequence: 0,
     capturedAt: null,
+    capturedMonotonicAt: null,
     hasChanged: false
   })
   const [isProcessing, setIsProcessing] = useState(false)
@@ -83,7 +88,7 @@ export function useFrameCapture(
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const diffCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const prevGrayRef = useRef<Uint8ClampedArray | null>(null)
-  const lastDataUrlRef = useRef<string | null>(null)
+  const lastVideoFrameRef = useRef<{ video: HTMLVideoElement; source: string; stream: HTMLVideoElement['srcObject']; time: number } | null>(null)
   const enabledRef = useRef(enabled)
   enabledRef.current = enabled
 
@@ -126,6 +131,26 @@ export function useFrameCapture(
       if (isProcessingRef.current) return
 
       try {
+        const sourceTime = video.currentTime
+        const previousVideoFrame = lastVideoFrameRef.current
+        // A paused/stalled decoder is not a new observation, even if a timer fires.
+        if (!Number.isFinite(sourceTime) || (
+          previousVideoFrame?.video === video &&
+          previousVideoFrame.source === video.currentSrc &&
+          previousVideoFrame.stream === video.srcObject &&
+          previousVideoFrame.time === sourceTime
+        )) return
+
+        const vw = video.videoWidth
+        const vh = video.videoHeight
+        if (!vw || !vh) return
+        if (!previousVideoFrame || previousVideoFrame.video !== video ||
+          previousVideoFrame.source !== video.currentSrc || previousVideoFrame.stream !== video.srcObject ||
+          sourceTime < previousVideoFrame.time) {
+          prevGrayRef.current = null
+          unchangedCountRef.current = 0
+        }
+
         const diffCtx = diffCanvas.getContext('2d')
         if (!diffCtx) return
 
@@ -153,28 +178,6 @@ export function useFrameCapture(
           }
         }
 
-        const capturedAt = Date.now()
-        if (!changed && lastDataUrlRef.current) {
-          // Idle scene: reuse the last encoded frame instead of re-encoding a JPEG.
-          // Keep incrementing frameSequence so consumers (e.g. the VLM idle probe)
-          // are still scheduled on every capture tick.
-          isProcessingRef.current = true
-          setIsProcessing(true)
-          setCapturedFrame((previous) => ({
-            frameDataUrl: lastDataUrlRef.current,
-            frameSequence: previous.frameSequence + 1,
-            capturedAt,
-            hasChanged: false
-          }))
-          setCaptureCount((c) => c + 1)
-          setError(null)
-          return
-        }
-
-        const vw = video.videoWidth
-        const vh = video.videoHeight
-        if (!vw || !vh) return
-
         const scale = Math.min(maxWidth / vw, maxHeight / vh, 1)
         const w = Math.round(vw * scale)
         const h = Math.round(vh * scale)
@@ -184,9 +187,11 @@ export function useFrameCapture(
         const ctx = canvas.getContext('2d')
         if (!ctx) return
 
+        const capturedAt = Date.now()
+        const capturedMonotonicAt = performance.now()
         ctx.drawImage(video, 0, 0, w, h)
         const dataUrl = canvas.toDataURL('image/jpeg', quality)
-        lastDataUrlRef.current = dataUrl
+        lastVideoFrameRef.current = { video, source: video.currentSrc, stream: video.srcObject, time: sourceTime }
 
         isProcessingRef.current = true
         setIsProcessing(true)
@@ -194,7 +199,8 @@ export function useFrameCapture(
           previous.frameSequence,
           dataUrl,
           changed,
-          capturedAt
+          capturedAt,
+          capturedMonotonicAt
         ))
         setCaptureCount((c) => c + 1)
         setError(null)

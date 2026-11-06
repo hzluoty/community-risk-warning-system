@@ -52,6 +52,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Contract drift check
+        run: npm run check:contract
+
       - name: Create .env from secrets
         if: env.SHOULD_PACKAGE == 'true'
         shell: pwsh
@@ -65,6 +68,18 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust unit tests (core + proxy + vlm)
+        run: cargo test -p crws-core -p crws-proxy -p crws-vlm --manifest-path src-tauri/Cargo.toml
+
+      - name: Rust proxy release build
+        run: cargo build -p crws-proxy --release --manifest-path src-tauri/Cargo.toml
+
+      - name: Tauri shell check (validates tauri.conf.json)
+        run: cargo check -p crws-app --manifest-path src-tauri/Cargo.toml
 
       - name: Skip packaging for pull requests
         if: env.SHOULD_PACKAGE != 'true'

@@ -8,6 +8,7 @@ import {
   getDetectorRetryDelayMs,
   getVlmAnalysisFailure,
   isCurrentVlmAnalysisRun,
+  isFreshVlmObservation,
   isRequestCanceled,
   planVlmDispatch,
   resetVlmAnalysisContext,
@@ -313,5 +314,44 @@ describe('checkVlmConnectionStatus', () => {
       status: 'starting',
       source: 'electron'
     })
+  })
+})
+
+
+describe('monotonic observation freshness', () => {
+  it('accepts exactly the configured age boundary', () => {
+    expect(isFreshVlmObservation(100, 30100, 30000)).toBe(true)
+  })
+
+  it('rejects responses beyond the capture-based age limit', () => {
+    expect(isFreshVlmObservation(100, 30100.001, 30000)).toBe(false)
+  })
+
+  it('rejects missing and invalid monotonic timestamps', () => {
+    expect(isFreshVlmObservation(null, 100, 30000)).toBe(false)
+    expect(isFreshVlmObservation(NaN, 100, 30000)).toBe(false)
+    expect(isFreshVlmObservation(0, Infinity, 30000)).toBe(false)
+  })
+
+  it('rejects future captures and invalid freshness limits', () => {
+    expect(isFreshVlmObservation(101, 100, 30000)).toBe(false)
+    expect(isFreshVlmObservation(0, 100, 0)).toBe(false)
+    expect(isFreshVlmObservation(0, 100, NaN)).toBe(false)
+  })
+})
+
+describe('mandatory first and periodic VLM observations', () => {
+  it('dispatches a due probe even when fallback is configured longer than idle probing', () => {
+    expect(planVlmDispatch({
+      detectorFailed: false, detections: [], now: 12000,
+      lastVlmTime: 1000, fallbackIntervalMs: 60000, periodicProbeDue: true
+    })).toEqual({ shouldSendVlm: true, reason: 'periodic-probe' })
+  })
+
+  it('does not change ordinary skip behavior when no probe is due', () => {
+    expect(planVlmDispatch({
+      detectorFailed: false, detections: [], now: 12000,
+      lastVlmTime: 1000, fallbackIntervalMs: 60000, periodicProbeDue: false
+    }).shouldSendVlm).toBe(false)
   })
 })

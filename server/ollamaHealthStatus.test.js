@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveOllamaHealthStatus } from './ollamaHealthStatus.js';
+import { resolveOllamaHealthStatus } from '../shared/ollamaHealthStatus.js';
 
 describe('ollamaHealthStatus', () => {
   it('centralizes ready/loading/error mapping for llama-server health responses', () => {

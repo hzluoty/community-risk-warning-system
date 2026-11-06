@@ -7,7 +7,7 @@ import {
   getMissingRequiredVlmFiles,
   isVlmLifecycleCurrent
 } from './ollamaManager'
-import { resolveOllamaHealthStatus } from '../server/ollamaHealthStatus.js'
+import { resolveOllamaHealthStatus } from '../shared/ollamaHealthStatus.js'
 
 vi.mock('electron', () => ({
   app: {
@@ -46,6 +46,37 @@ describe('buildLlamaServerArgs', () => {
     mtpEnabled: false,
     mtpDraftTokens: 4
   }
+
+  // 同序 argv 全列表断言（与 Rust crates/vlm/src/args.rs 的
+  // llama_server_args_match_the_electron_manager 消费同一份契约模板 →
+  // 同一条有序清单；顺序漂移、多余/缺失参数在此即红）。
+  it('matches the full ordered argv list shared with the Rust side', () => {
+    const args = buildLlamaServerArgs({
+      modelPath: 'C:\\vlm\\model.gguf',
+      mmprojPath: 'C:\\vlm\\mmproj.gguf',
+      effectiveGpuLayers: 99,
+      vlmConfig: baseConfig
+    })
+
+    expect(args).toEqual([
+      '-m', 'C:\\vlm\\model.gguf',
+      '-a', 'local-model',
+      '--port', '11434',
+      '--host', '127.0.0.1',
+      '-ngl', '99',
+      '-c', '4096',
+      '-b', '512',
+      '-ub', '256',
+      '--flash-attn', 'on',
+      '--cache-type-k', 'f16',
+      '--cache-type-v', 'f16',
+      '--no-warmup',
+      '--cont-batching',
+      '--jinja',
+      '--reasoning', 'off',
+      '--mmproj', 'C:\\vlm\\mmproj.gguf'
+    ])
+  })
 
   it('loads mmproj and KV cache args without MTP by default', () => {
     const args = buildLlamaServerArgs({

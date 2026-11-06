@@ -1,0 +1,117 @@
+{
+  "description": "VLM 进程监管参数（llama-server 启动参数模板 / 子进程 env 白名单 / 退避与轮询常量 / 必需运行时文件）—— TS（electron/ollamaManager.ts）与 Rust（crates/vlm）共读同一份，消灭 divergences.md 登记的无断言分叉。",
+  "restartPolicy": {
+    "maxRestartAttempts": 3,
+    "restartDelayMs": 3000,
+    "resourcePollIntervalMs": 5000
+  },
+  "childEnvWhitelist": {
+    "common": [
+      "PATH",
+      "TEMP",
+      "TMP",
+      "CUDA_PATH",
+      "CUDA_VISIBLE_DEVICES",
+      "OMP_NUM_THREADS"
+    ],
+    "windows": [
+      "SYSTEMROOT",
+      "WINDIR",
+      "COMSPEC",
+      "PATHEXT"
+    ],
+    "prefixes": [
+      "GGML_",
+      "CUDA_PATH_V"
+    ],
+    "apiKeyVariable": "LLAMA_API_KEY",
+    "unix": [
+      "HOME",
+      "TMPDIR",
+      "LD_LIBRARY_PATH",
+      "DYLD_LIBRARY_PATH",
+      "LANG",
+      "LC_ALL"
+    ]
+  },
+  "llamaServerArgs": {
+    "argsTemplate": [
+      {
+        "flag": "-m",
+        "source": "modelPath"
+      },
+      {
+        "flag": "-a",
+        "source": "modelAlias"
+      },
+      {
+        "flag": "--port",
+        "source": "port"
+      },
+      {
+        "flag": "--host",
+        "source": "host"
+      },
+      {
+        "flag": "-ngl",
+        "source": "gpuLayers"
+      },
+      {
+        "flag": "-c",
+        "source": "contextSize"
+      },
+      {
+        "flag": "-b",
+        "source": "batchSize"
+      },
+      {
+        "flag": "-ub",
+        "source": "ubatchSize"
+      },
+      {
+        "flag": "--flash-attn",
+        "value": "on"
+      },
+      {
+        "flag": "--cache-type-k",
+        "source": "cacheTypeK"
+      },
+      {
+        "flag": "--cache-type-v",
+        "source": "cacheTypeV"
+      },
+      {
+        "flag": "--no-warmup"
+      },
+      {
+        "flag": "--cont-batching"
+      },
+      {
+        "flag": "--jinja"
+      },
+      {
+        "flag": "--reasoning",
+        "value": "off"
+      }
+    ],
+    "mmprojFlag": "--mmproj",
+    "mmprojPrecedenceWarning": "VLM_MTP_ENABLED=true 与 mmproj 视觉编码器互斥；已保留视觉能力并忽略 MTP。 如需 MTP 文本加速，请改用无 mmproj 的纯文本模型，并使用支持 MTP 的 llama.cpp 构建。",
+    "mtpArgs": [
+      {
+        "flag": "--spec-type",
+        "value": "draft-mtp"
+      },
+      {
+        "flag": "--spec-draft-n-max",
+        "source": "mtpDraftTokens"
+      }
+    ]
+  },
+  "requiredRuntimeFiles": {
+    "serverExecutable": "llama-server.exe",
+    "cudaDlls": [
+      "ggml-cuda.dll",
+      "cudart64_12.dll"
+    ]
+  }
+}

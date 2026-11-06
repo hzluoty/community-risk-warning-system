@@ -21,3 +21,5 @@ export interface QwenProxyAppOptions {
 
 export function loadQwenProxyConfig(env?: NodeJS.ProcessEnv): QwenProxyConfig;
 export function createQwenProxyApp(config?: QwenProxyConfig, options?: QwenProxyAppOptions): Express;
+
+export function buildOllamaRequestBody(body?: Record<string, unknown>, model?: string): Record<string, unknown>;

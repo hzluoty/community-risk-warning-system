@@ -36,7 +36,7 @@ export interface TrendPoint {
 
 export interface VlmAnalysis {
   riskScore: number;
-  level: 'A' | 'B' | 'C';
+  level: 'Normal' | 'A' | 'B' | 'C';
   hasLoitering?: boolean;
   hasGathering?: boolean;
   hasFallen?: boolean;
@@ -63,7 +63,7 @@ export interface RiskEvent {
   area: string;
   eventType: string;
   riskScore: number;
-  level: 'A' | 'B' | 'C';
+  level: 'Normal' | 'A' | 'B' | 'C';
   status: EventStatus;
   occurredAt: string;
   summary: string;

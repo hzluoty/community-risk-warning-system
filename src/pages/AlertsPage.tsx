@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Badge, Button, Space, Tag } from 'antd';
+import { Alert, Badge, Button, Space, Tag } from 'antd';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '@/store/useAppStore';
 
 const levelConfig: Record<string, { color: string; label: string }> = {
+  Normal: { color: '#94a3b8', label: '未达正式告警等级' },
   A: { color: '#f43f5e', label: 'A级 · 高危' },
   B: { color: '#ff8c00', label: 'B级 · 中危' },
   C: { color: '#00c3ff', label: 'C级 · 低危' }
@@ -16,12 +17,14 @@ const statusConfig: Record<string, { color: string; label: string }> = {
 };
 
 export function AlertsPage() {
-  const { events, selectedEventId, selectEvent, markEventStatus } = useAppStore(
+  const { events, selectedEventId, selectEvent, markEventStatus, confirmEvent, persistenceError } = useAppStore(
     useShallow((state) => ({
       events: state.events,
       selectedEventId: state.selectedEventId,
       selectEvent: state.selectEvent,
-      markEventStatus: state.markEventStatus
+      markEventStatus: state.markEventStatus,
+      confirmEvent: state.confirmEvent,
+      persistenceError: state.persistenceError
     }))
   );
   const [filter, setFilter] = useState<string>('全部');
@@ -31,7 +34,7 @@ export function AlertsPage() {
       .sort((a, b) => b.riskScore - a.riskScore)
       .filter((event) => {
         if (filter === '全部') return true;
-        return `${event.level}级` === filter;
+        return `${event.level === 'Normal' ? '待确认' : `${event.level}级`}` === filter;
       });
   }, [events, filter]);
 
@@ -44,7 +47,8 @@ export function AlertsPage() {
     <div className="alerts-layout">
       {/* 左栏：事件列表 */}
       <div className="panel alerts-list-col">
-        <div className="panel-title">预警事件列表</div>
+        <div className="panel-title">实际事件与人工复核列表</div>
+        {persistenceError ? <Alert type="error" title={`事件未持久化：${persistenceError}`} /> : null}
 
         <div className="alerts-filter-bar">
           {['全部', 'A级', 'B级', 'C级'].map((key) => (
@@ -77,7 +81,7 @@ export function AlertsPage() {
                     className="alerts-card-level"
                     style={{ background: lv.color }}
                   >
-                    {event.level}级
+                    {event.level === 'Normal' ? '待确认' : `${event.level}级`}
                   </span>
                   <span
                     className="alerts-card-status"
@@ -143,6 +147,7 @@ export function AlertsPage() {
             <div className="alerts-detail-divider" />
 
             <Space size={8} wrap>
+              <Button onClick={() => confirmEvent(selectedEvent.id)}>人工确认事件属实</Button>
               {selectedEvent.status === 'pending' ? (
                 <Button type="primary" onClick={() => markEventStatus(selectedEvent.id, 'processing')}>
                   开始处置
@@ -158,7 +163,7 @@ export function AlertsPage() {
                   重新打开
                 </Button>
               ) : null}
-              <span className="alerts-detail-meta-text">当前为本地演示状态，正式部署应接入工单服务。</span>
+              <span className="alerts-detail-meta-text">处置与人工确认保存本机元数据；不会解除可见风险。不含图像留存或远程工单服务。</span>
             </Space>
 
             <div className="alerts-detail-body">
@@ -191,7 +196,7 @@ export function AlertsPage() {
                   <div className="alerts-detail-vlm-cell">
                     <span>风险等级</span>
                     <Tag color={levelConfig[selectedEvent.analysis.level]?.color}>
-                      {selectedEvent.analysis.level}级
+                      {selectedEvent.analysis.level === 'Normal' ? '未达正式等级' : `${selectedEvent.analysis.level}级`}
                     </Tag>
                   </div>
                   <div className="alerts-detail-vlm-cell">

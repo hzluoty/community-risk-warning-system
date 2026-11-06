@@ -12,20 +12,17 @@
 
 import { Router } from 'express';
 import express from 'express';
+import {
+  TASKS_INGEST_ROUTE,
+  TASKS_RESULTS_ROUTE,
+  TASKS_ROUTE_PREFIX,
+  TASKS_RUN_ROUTE
+} from '../shared/apiRoutes.js';
+import { COMPETITION_TASK_IDS } from '../shared/taskIds.js';
 
-/** 与 competition/code/task-contract/types.ts 的 TaskId 保持一致（镜像，勿双处扩展）。 */
-export const COMPETITION_TASK_IDS = Object.freeze([
-  'traffic_light',
-  'people_count',
-  'sign_reading',
-  'trash_bin',
-  'building_fire',
-  'building_temperature',
-  'gauge_reading',
-  'license_plate',
-  'ebike_status',
-  'parking'
-]);
+// 契约事实已下沉 shared/taskIds.js（渲染端 / JS 服务端 / Rust 三方共读）；此处保留再导出
+// 以兼容旧导入路径，勿在此扩展白名单。
+export { COMPETITION_TASK_IDS } from '../shared/taskIds.js';
 
 const KNOWN_RUN_STATUSES = new Set(['running', 'done']);
 
@@ -82,7 +79,10 @@ export function validateTaskEnvelope(payload) {
       return { ok: false, error: `boxes 数量不能超过 ${MAX_BOXES}` };
     }
   }
-  if (JSON.stringify(payload).length > MAX_ENVELOPE_JSON_LENGTH) {
+  // 字节预算（与 Rust serde_json::to_vec().len() 同单位；多字节 UTF-8 安全）：
+  // 原实现用 JSON.stringify().length（UTF-16 码元数），与下方"总字节预算"注释意图
+  // 不符 —— 统一为字节，阈值不变（架构评审第十五轮 P0-2）。
+  if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > MAX_ENVELOPE_JSON_LENGTH) {
     return { ok: false, error: '信封负载超过大小限制' };
   }
   return { ok: true, envelope: payload };
@@ -99,7 +99,7 @@ export function validateRunEvent(payload) {
   if (!KNOWN_RUN_STATUSES.has(payload.status)) {
     return { ok: false, error: `status 必须为 ${[...KNOWN_RUN_STATUSES].join('|')}` };
   }
-  if (JSON.stringify(payload).length > MAX_RUN_JSON_LENGTH) {
+  if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > MAX_RUN_JSON_LENGTH) {
     return { ok: false, error: '运行事件负载超过大小限制' };
   }
   return { ok: true, event: payload };
@@ -112,7 +112,13 @@ export function createTasksIngestRouter({ maxResults = 200 } = {}) {
   /** 最新结果在前；条目 = {...envelope, receivedAt} */
   const state = { results: [], run: null };
 
-  router.post('/ingest', jsonParser, (req, res) => {
+  // Router 挂载在 /api/tasks 前缀下，路由内用去前缀的相对路径；
+  // 相对路径由 shared 契约常量推导，避免第二份手写路径。
+  const ingestPath = TASKS_INGEST_ROUTE.slice(TASKS_ROUTE_PREFIX.length);
+  const resultsPath = TASKS_RESULTS_ROUTE.slice(TASKS_ROUTE_PREFIX.length);
+  const runPath = TASKS_RUN_ROUTE.slice(TASKS_ROUTE_PREFIX.length);
+
+  router.post(ingestPath, jsonParser, (req, res) => {
     const payload = req.body;
     if (payload && payload.type === 'run') {
       const checked = validateRunEvent(payload);
@@ -127,7 +133,7 @@ export function createTasksIngestRouter({ maxResults = 200 } = {}) {
     return res.json({ ok: true, stored: 'task' });
   });
 
-  router.get('/results', (req, res) => {
+  router.get(resultsPath, (req, res) => {
     const since = Number(req.query.since);
     const items = Number.isFinite(since)
       ? state.results.filter((item) => item.receivedAt > since)
@@ -135,13 +141,13 @@ export function createTasksIngestRouter({ maxResults = 200 } = {}) {
     res.json({ ok: true, count: items.length, results: items });
   });
 
-  router.get('/results/:taskId', (req, res) => {
+  router.get(`${resultsPath}/:taskId`, (req, res) => {
     const item = state.results.find((entry) => entry.taskId === req.params.taskId);
     if (!item) return res.status(404).json({ ok: false, error: '暂无该任务结果' });
     res.json({ ok: true, result: item });
   });
 
-  router.get('/run', (_req, res) => {
+  router.get(runPath, (_req, res) => {
     res.json({ ok: true, run: state.run });
   });
 

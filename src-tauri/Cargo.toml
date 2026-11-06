@@ -1,0 +1,48 @@
+# 混合 manifest：根 package 是 Tauri 壳（crws-app），workspace member 是代理库（crws-proxy）。
+# 不设 default-members：裸 cargo 命令保持「根 package + 全部 members」的常规语义
+#（Tauri CLI 在此目录以 --features custom-protocol 调用 cargo 时能选中 crws-app）。
+# 「只验代理不碰 WebView2 栈」用包选择表达：cargo test -p crws-proxy。
+[package]
+name = "crws-app"
+version.workspace = true
+edition.workspace = true
+description = "险封·社区风险预警平台 —— Tauri 壳：窗口、本地代理生命周期、VLM 进程管理。"
+default-run = "crws-app"
+
+[lib]
+name = "crws_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "crws-app"
+path = "src/main.rs"
+
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/proxy", "crates/vlm"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+crws-proxy = { path = "crates/proxy" }
+crws-vlm = { path = "crates/vlm" }
+crws-core = { path = "crates/core" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+rand = "0.9"
+dotenvy = "0.15"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

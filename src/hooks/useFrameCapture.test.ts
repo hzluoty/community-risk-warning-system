@@ -3,12 +3,13 @@ import { createCapturedFrame } from './useFrameCapture'
 
 describe('createCapturedFrame', () => {
   it('increments the sequence and records capture metadata', () => {
-    const frame = createCapturedFrame(0, 'data:image/jpeg;base64,a', true, 1234)
+    const frame = createCapturedFrame(0, 'data:image/jpeg;base64,a', true, 1234, 42)
 
     expect(frame.frameSequence).toBe(1)
     expect(frame.frameDataUrl).toBe('data:image/jpeg;base64,a')
     expect(frame.hasChanged).toBe(true)
     expect(frame.capturedAt).toBe(1234)
+    expect(frame.capturedMonotonicAt).toBe(42)
   })
 
   it('uses Date.now() when capturedAt is omitted', () => {

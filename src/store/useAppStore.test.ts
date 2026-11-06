@@ -1,11 +1,16 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { useAppStore } from './useAppStore';
+import { events as fixtureEvents } from '@/data/mock';
+import { emptyDecisionState } from '@/services/events/decisionEngine';
 
 describe('useAppStore', () => {
   beforeEach(() => {
     const initialState = useAppStore.getInitialState();
 
     useAppStore.setState({
+      events: [],
+      decisionState: emptyDecisionState(),
+      persistenceError: null,
       activeCameraId: initialState.cameras[0].id,
       selectedEventId: initialState.events[0]?.id,
       analysis: initialState.analysis,
@@ -25,7 +30,7 @@ describe('useAppStore', () => {
     const state = useAppStore.getState();
     expect(state.analysis.hasRisk).toBe(false);
     expect(state.analysis.riskScore).toBe(0);
-    expect(state.analysis.level).toBe('C');
+    expect(state.analysis.level).toBe('Normal');
     expect(state.analysis.summary).toContain('等待');
     expect(state.analysis.breakdown).toEqual([]);
     expect(state.analysisValidity).toBe('unknown');
@@ -33,6 +38,7 @@ describe('useAppStore', () => {
   });
 
   it('keeps camera and event aligned without overwriting real-time analysis', () => {
+    useAppStore.setState({ events: fixtureEvents }); // explicit UI fixture, not production initialization
     const targetEvent = useAppStore.getState().events[1];
 
     const analysisBefore = useAppStore.getState().analysis;

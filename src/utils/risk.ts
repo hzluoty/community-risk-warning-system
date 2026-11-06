@@ -20,7 +20,8 @@ export const eventStatusTextMap: Record<EventStatus, string> = {
   done: '已处置'
 };
 
-export const riskGradeColorMap: Record<'A' | 'B' | 'C', string> = {
+export const riskGradeColorMap: Record<'Normal' | 'A' | 'B' | 'C', string> = {
+  Normal: '#94a3b8',
   A: '#ef4444',
   B: '#f59e0b',
   C: '#3b82f6'

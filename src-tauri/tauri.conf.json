@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "险封·社区风险预警平台",
+  "version": "0.2.0",
+  "identifier": "com.community-risk-warning.app",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev:web",
+    "beforeBuildCommand": "npm run build:renderer",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "险封·社区风险预警平台",
+        "width": 1440,
+        "height": 900
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://api.map.baidu.com https://map.baidu.com; style-src 'self' 'unsafe-inline' https://api.map.baidu.com; img-src 'self' data: blob: https:; media-src 'self' blob: mediastream: https:; connect-src 'self' http: https: ws: wss: data: blob:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "resources": []
+  }
+}

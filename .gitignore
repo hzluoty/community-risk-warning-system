@@ -25,6 +25,12 @@ idea-stage/
 esa/env.generated.js
 .DS_Store
 
+# Rust / Tauri 构建产物（shared/contract.json 是编译期输入，必须入库）
+src-tauri/target
+src-tauri/gen
+src-tauri/.cargo
+!shared/contract.json
+
 # Paper build/review caches
 paper/*.aux
 paper/*.bbl
@@ -54,3 +60,8 @@ benchmark/
 # Competition materials (kept local, not versioned)
 competition/
 test.txt
+
+# Local paper docx drafts (kept local, not versioned)
+docs_local/
+src-tauri/tauri.bundle.conf.json
+.work/

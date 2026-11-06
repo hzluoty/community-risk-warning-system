@@ -1,13 +1,3 @@
-export const GPU_AVAILABILITY_UNKNOWN = 'unknown';
-
-export function resolveOllamaHealthStatus(statusCode) {
-  if (statusCode >= 200 && statusCode < 300) {
-    return { ready: true, status: 'ready', gpu: GPU_AVAILABILITY_UNKNOWN };
-  }
-
-  if (statusCode === 503) {
-    return { ready: false, status: 'loading', gpu: GPU_AVAILABILITY_UNKNOWN };
-  }
-
-  return { ready: false, status: 'error', gpu: GPU_AVAILABILITY_UNKNOWN };
-}
+// 规则本体已下沉 shared/ollamaHealthStatus.js（Electron / JS 服务端 / Rust 三方共读）；
+// 此处保留再导出以兼容旧导入路径，勿在此扩展。
+export { GPU_AVAILABILITY_UNKNOWN, resolveOllamaHealthStatus } from '../shared/ollamaHealthStatus.js';

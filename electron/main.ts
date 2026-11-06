@@ -7,6 +7,7 @@ import crypto from 'node:crypto'
 import dotenv from 'dotenv'
 import { createQwenProxyApp, loadQwenProxyConfig } from '../server/qwenProxy.js'
 import { createTasksIngestRouter } from '../server/tasksIngest.js'
+import { LOCAL_PROXY_TOKEN_HEADER } from '../shared/apiRoutes.js'
 import {
   startOllama,
   stopOllama,
@@ -95,8 +96,9 @@ ipcMain.handle('get-api-auth-headers', (event) => {
   // 注意：此 token 仅保护本地 127.0.0.1 代理免遭同机其他进程滥用；
   // 它由 contextBridge 进入渲染进程是必要的，但意味着任何渲染端 XSS 都能拿到。
   // 渲染端严格 CSP、拒绝远程内容、IPC sender 校验是缓解层。
+  // 头名来自 shared/apiRoutes.js（跨端 wire 契约，HTTP 头大小写不敏感）。
   return {
-    'X-Local-Proxy-Token': localProxyToken
+    [LOCAL_PROXY_TOKEN_HEADER]: localProxyToken
   }
 })
 

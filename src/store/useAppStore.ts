@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import { cameras, events } from '@/data/mock';
+import { cameras } from '@/data/mock';
+import type { DecisionState, EventObservation } from '@/types/riskEvents';
+import { applyEventObservation, EVENT_SESSION_ID, expireDecisionEvents } from '@/services/events/decisionEngine';
+import { loadEventState, projectDecisionEvents, saveEventState } from '@/services/events/eventRepository';
 import type {
   AnalysisValidity,
   CameraPoint,
@@ -32,6 +35,11 @@ export interface TaskRunState {
 interface AppState {
   cameras: CameraPoint[];
   events: RiskEvent[];
+  decisionState: DecisionState;
+  persistenceError: string | null;
+  applyEventObservation: (observation: EventObservation) => void;
+  tickEventClock: (now: number) => void;
+  confirmEvent: (eventId: string) => void;
   activeCameraId: string;
   selectedEventId?: string;
   analysis: VlmAnalysis;
@@ -71,7 +79,7 @@ interface AppState {
 
 const waitingAnalysis: VlmAnalysis = {
   riskScore: 0,
-  level: 'C',
+  level: 'Normal',
   hasRisk: false,
   confidence: 0,
   summary: '等待摄像头画面与首次分析...',
@@ -80,14 +88,21 @@ const waitingAnalysis: VlmAnalysis = {
   trend: []
 };
 
-const firstEvent = events[0];
-const firstCamera = cameras.find((camera) => camera.id === firstEvent?.cameraId) ?? cameras[0];
+const initialDecisions = loadEventState(EVENT_SESSION_ID);
+const initialEvents = projectDecisionEvents(initialDecisions, cameras);
+const firstCamera = cameras[0];
+function persistenceError(state: DecisionState): string | null {
+  try { saveEventState(state); return null; }
+  catch (error) { return error instanceof Error ? error.message : '事件保存失败'; }
+}
 
 export const useAppStore = create<AppState>((set, get) => ({
   cameras,
-  events,
+  events: initialEvents,
+  decisionState: initialDecisions,
+  persistenceError: null,
   activeCameraId: firstCamera.id,
-  selectedEventId: firstEvent?.id,
+  selectedEventId: undefined,
   analysis: waitingAnalysis,
   analysisContext: null,
   analysisValidity: 'unknown',
@@ -116,10 +131,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  markEventStatus: (eventId, status) =>
-    set((state) => ({
-      events: state.events.map((item) => (item.id === eventId ? { ...item, status } : item))
-    })),
+  markEventStatus: (eventId, status) => {
+    const decisionState = { ...get().decisionState, events: get().decisionState.events.map((item) =>
+      item.id === eventId ? { ...item, handling: status } : item) };
+    set({ decisionState, events: projectDecisionEvents(decisionState, get().cameras), persistenceError: persistenceError(decisionState) });
+  },
+
+  confirmEvent: (eventId) => {
+    const decisionState = { ...get().decisionState, events: get().decisionState.events.map((item) =>
+      item.id === eventId && item.confirmedAt === null ? { ...item, confirmedAt: Date.now() } : item) };
+    set({ decisionState, events: projectDecisionEvents(decisionState, get().cameras), persistenceError: persistenceError(decisionState) });
+  },
+
+  applyEventObservation: (observation) => {
+    const decisionState = applyEventObservation(get().decisionState, observation);
+    set({ decisionState, events: projectDecisionEvents(decisionState, get().cameras), persistenceError: persistenceError(decisionState) });
+  },
+
+  tickEventClock: (now) => {
+    const previous = get().decisionState;
+    const decisionState = expireDecisionEvents(previous, now, EVENT_SESSION_ID);
+    if (!decisionState.events.some((item, index) => item.health !== previous.events[index].health || item.lifecycle !== previous.events[index].lifecycle)) return;
+    set({ decisionState, events: projectDecisionEvents(decisionState, get().cameras), persistenceError: persistenceError(decisionState) });
+  },
 
   setAnalysis: (analysis, boxes, context) => {
     const prevTrend = get().analysis.trend;
