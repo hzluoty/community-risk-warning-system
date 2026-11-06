@@ -33,7 +33,7 @@
 ## 切换点（未执行）
 
 - **发布路径**：`npm run package` = Electron + JS 内嵌代理（`electron/main.ts` import `server/qwenProxy.js`）。
-- **实验路径**：`npm run tauri:build`（需先 `npm run download-model` + `prepare-vlm`）= Tauri 壳 + Rust 代理 + Rust supervisor。已通过：cargo test 三 crate 全绿、golden 双端 19 条、壳冒烟（随机端口/信任态/CORS tauri origin/令牌 403）、真实 VLM 推理（llama.cpp b9484 + Qwen3.5-4B-Q4_K_M + mmproj，CUDA RTX 4060）。
+- **实验路径**：`npm run tauri:build`（需先 `npm run download-model` + `prepare-vlm`）= Tauri 壳 + Rust 代理 + Rust supervisor。已通过：cargo test 三 crate 全绿、golden 双端 23 条、校验层夹具 20 条、壳冒烟（随机端口/信任态/CORS tauri origin/令牌 403）、真实 VLM 推理（llama.cpp b9484 + Qwen3.5-4B-Q4_K_M + mmproj，CUDA RTX 4060）。
 - 切换条件（全部满足才可删 JS 侧）：
   1. ~~supervisor 参数表入 shared 契约~~ **已完成**；~~载荷校验规则入 shared~~ **已完成**（payloadValidation.js 本体 + 夹具双端断言）；会话策略（端口范围/密钥长度/origin 清单）仍未入契约；
   2. `npm run tauri:build` 产物在本机完成一次完整手工验收（地图/视频/检测/VLM 分析四页面）；

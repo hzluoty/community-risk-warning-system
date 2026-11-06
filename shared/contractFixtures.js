@@ -156,8 +156,8 @@ export function buildRequestBodyCases() {
 }
 
 /**
- * 载荷校验规则夹具计算层：期望 verdict 由发布路径（server/qwenProxy.js 的
- * validateChatCompletionPayload —— JS 语义为准）实算产出。
+ * 载荷校验规则夹具计算层：期望 verdict 由 shared/payloadValidation.js
+ * （规则本体，发布路径语义）实算产出 —— shared 层不依赖任何上层实现。
  * 双端消费：server/qwenProxy.test.js（直调校验函数）与
  * crates/proxy/src/payload.rs 单测（validate_chat_completion_payload）——
  * null/布尔/字符串形态在此穷举；HTTP golden 只保留可确定观测的拒绝类。

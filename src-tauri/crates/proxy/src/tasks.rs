@@ -299,12 +299,10 @@ pub async fn list_results(
 }
 
 /// JS Number() 语义：非有限/非数值 → None（Number.isFinite 过滤）。
+/// JS `Number()` 底座在 crws-core（js_number_str：trim/空串→0/parse）——
+/// 本函数只叠加 tasks 专属约束（整数 + i64 范围，用于 `?since=` 查询参数）。
 fn parse_js_number(raw: &str) -> Option<i64> {
-    let t = raw.trim();
-    if t.is_empty() {
-        return Some(0);
-    }
-    let n: f64 = t.parse().ok()?;
+    let n = crws_core::js_number_str(raw)?;
     if n.is_finite() && n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
         Some(n as i64)
     } else {
