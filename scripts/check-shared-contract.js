@@ -5,7 +5,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildContract } from './generate-shared-contract.js'
-import { buildEnvCases, buildRequestBodyCases } from '../shared/contractFixtures.js'
+import {
+  buildEnvCases,
+  buildPayloadValidationCases,
+  buildRequestBodyCases
+} from '../shared/contractFixtures.js'
 import {
   ROUTE_PLACEHOLDERS,
   TASKS_RESULTS_ROUTE
@@ -20,7 +24,8 @@ const regenerated = (value) => `${JSON.stringify(value, null, 2)}\n`
 const targets = [
   ['contract.json', buildContract()],
   ['fixtures/env.json', buildEnvCases()],
-  ['fixtures/requestBody.json', buildRequestBodyCases()]
+  ['fixtures/requestBody.json', buildRequestBodyCases()],
+  ['fixtures/payloadValidation.json', buildPayloadValidationCases()]
 ]
 
 let stale = false

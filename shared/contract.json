@@ -25,6 +25,19 @@
     "{{LOCAL_PROXY_TOKEN_HEADER}}": "x-local-proxy-token",
     "{{TOKEN}}": ""
   },
+  "payloadValidation": {
+    "disallowedTokenLimitFields": [
+      "max_completion_tokens",
+      "max_output_tokens",
+      "max_new_tokens",
+      "num_predict",
+      "n_predict"
+    ],
+    "defaults": {
+      "maxChatMessages": 16,
+      "maxChatTokens": 2048
+    }
+  },
   "vlmRuntime": {
     "description": "VLM 进程监管参数（llama-server 启动参数模板 / 子进程 env 白名单 / 退避与轮询常量 / 必需运行时文件）—— TS（electron/ollamaManager.ts）与 Rust（crates/vlm）共读同一份，消灭 divergences.md 登记的无断言分叉。",
     "restartPolicy": {

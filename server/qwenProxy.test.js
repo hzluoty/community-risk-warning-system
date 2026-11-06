@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import http from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -876,5 +879,15 @@ describe('qwenProxy', () => {
         }
       }
     });
+  });
+});
+
+describe('payload validation contract (shared/fixtures/payloadValidation.json)', () => {
+  const fixturesPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'shared', 'fixtures', 'payloadValidation.json');
+  const { cases, config } = JSON.parse(readFileSync(fixturesPath, 'utf8'));
+
+  it.each(cases.map((c) => [c.name, c]))('%s', (_name, { body, expected }) => {
+    // 阈值来自夹具（生成器由 PAYLOAD_VALIDATION_DEFAULTS 实算落盘）—— 与 Rust 侧同源
+    expect(validateChatCompletionPayload(body, config)).toEqual(expected);
   });
 });

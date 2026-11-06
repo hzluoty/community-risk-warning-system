@@ -154,3 +154,51 @@ export function buildRequestBodyCases() {
     expected: BUILDERS[builder](...args.map((arg) => structuredClone(arg)))
   }));
 }
+
+/**
+ * 载荷校验规则夹具计算层：期望 verdict 由发布路径（server/qwenProxy.js 的
+ * validateChatCompletionPayload —— JS 语义为准）实算产出。
+ * 双端消费：server/qwenProxy.test.js（直调校验函数）与
+ * crates/proxy/src/payload.rs 单测（validate_chat_completion_payload）——
+ * null/布尔/字符串形态在此穷举；HTTP golden 只保留可确定观测的拒绝类。
+ */
+import {
+  DISALLOWED_TOKEN_LIMIT_FIELDS,
+  PAYLOAD_VALIDATION_DEFAULTS,
+  validateChatCompletionPayload
+} from './payloadValidation.js';
+
+export function buildPayloadValidationCases() {
+  // 阈值随夹具落盘（双端各读夹具里的 config，不各持一份硬编码）
+  const config = { ...PAYLOAD_VALIDATION_DEFAULTS };
+
+  const defs = [
+    { name: 'accepts-clean-body', body: { messages: [{ role: 'user', content: 'ok' }], stream: false } },
+    { name: 'accepts-absent-optional-fields', body: { messages: [{ role: 'user', content: 'ok' }] } },
+    { name: 'accepts-n-one', body: { messages: [{ role: 'user', content: 'ok' }], n: 1 } },
+    { name: 'accepts-best-of-one', body: { messages: [{ role: 'user', content: 'ok' }], best_of: 1 } },
+    { name: 'accepts-null-max-tokens', body: { messages: [{ role: 'user', content: 'ok' }], max_tokens: null } },
+    { name: 'accepts-string-max-tokens-like-js-number', body: { messages: [{ role: 'user', content: 'ok' }], max_tokens: '99' } },
+    { name: 'rejects-stream-null', body: { messages: [{ role: 'user', content: 'ok' }], stream: null } },
+    { name: 'rejects-stream-true', body: { messages: [{ role: 'user', content: 'ok' }], stream: true } },
+    { name: 'rejects-n-null', body: { messages: [{ role: 'user', content: 'ok' }], n: null } },
+    { name: 'rejects-n-false', body: { messages: [{ role: 'user', content: 'ok' }], n: false } },
+    { name: 'rejects-n-two', body: { messages: [{ role: 'user', content: 'ok' }], n: 2 } },
+    { name: 'rejects-best-of-null', body: { messages: [{ role: 'user', content: 'ok' }], best_of: null } },
+    { name: 'rejects-max-tokens-string-non-numeric', body: { messages: [{ role: 'user', content: 'ok' }], max_tokens: 'abc' } },
+    { name: 'rejects-max-tokens-zero', body: { messages: [{ role: 'user', content: 'ok' }], max_tokens: 0 } },
+    { name: 'rejects-empty-messages', body: { messages: [] } },
+    ...DISALLOWED_TOKEN_LIMIT_FIELDS.map((field) => ({
+      name: `rejects-disallowed-field-${field}`,
+      body: { messages: [{ role: 'user', content: 'ok' }], [field]: 100 }
+    }))
+  ];
+
+  return {
+    config: { ...PAYLOAD_VALIDATION_DEFAULTS },
+    cases: defs.map(({ name, body }) => {
+      const verdict = validateChatCompletionPayload(body, config);
+      return { name, body, expected: verdict };
+    })
+  };
+}

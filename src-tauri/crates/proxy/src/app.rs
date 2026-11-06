@@ -16,6 +16,7 @@ use crate::cors::cors_layer;
 use crate::routes;
 use crate::tasks::TaskStore;
 use crate::upstream::{LocalVlmClient, QwenClient};
+use crate::contract;
 use crws_core::VlmTrustReader;
 
 /// 共享应用状态：配置 + 限流器 + 上游客户端 + 任务存储 + VLM 信任句柄。
@@ -182,7 +183,6 @@ pub fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-use crate::contract;
 
 #[cfg(test)]
 mod tests {

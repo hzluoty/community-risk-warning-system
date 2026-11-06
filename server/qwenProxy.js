@@ -15,7 +15,16 @@ import {
 } from '../shared/apiRoutes.js';
 import { DEFAULT_QWEN_VLM_API_MODEL, DEFAULT_VLM_MODEL_ALIAS } from '../shared/vlmModelConfig.js';
 import { loadVlmRuntimeConfig } from '../shared/vlmRuntimeConfig.js';
-import { parseBoolean, parseInteger } from '../shared/envParsers.js';
+import { parseBoolean, parseInteger } from '../shared/envParsers.js'
+// 载荷校验/规范化本体已下沉 shared/payloadValidation.js（渲染端测试与 Rust 经夹具三方共读）；
+// 此处再导出兼容旧导入路径。
+export {
+  DISALLOWED_TOKEN_LIMIT_FIELDS,
+  normalizeChatCompletionPayload,
+  validateChatCompletionPayload
+} from '../shared/payloadValidation.js';
+// 本地绑定（路由处理器直接调用 —— export-from 不创建本地绑定）
+import { normalizeChatCompletionPayload, validateChatCompletionPayload } from '../shared/payloadValidation.js';
 import { QWEN_ENDPOINTS, findQwenEndpointByKey } from '../shared/qwenEndpoints.js';
 import { LOCAL_PROXY_TOKEN_HEADER } from '../shared/apiRoutes.js';
 // 请求体裁决已下沉 shared/vlmRequestBody.js（渲染端测试 / JS 服务端 / Rust 三方共用）；
@@ -42,13 +51,6 @@ const LOCAL_OLLAMA_HOST = '127.0.0.1';
 const LOOPBACK_HOST_NAMES = new Set(['127.0.0.1', 'localhost']);
 const DEFAULT_MAX_UPSTREAM_RESPONSE_BYTES = 2 * 1024 * 1024;
 const UPSTREAM_RESPONSE_TOO_LARGE = 'UPSTREAM_RESPONSE_TOO_LARGE';
-const DISALLOWED_TOKEN_LIMIT_FIELDS = [
-  'max_completion_tokens',
-  'max_output_tokens',
-  'max_new_tokens',
-  'num_predict',
-  'n_predict'
-];
 /** 比赛任务回传通道挂载前缀：唯一事实源在 shared/apiRoutes.js（与 Rust 契约共用）。 */
 
 function normalizeHost(host) {
@@ -511,62 +513,6 @@ export function buildExpressErrorResponse(error) {
   };
 }
 
-export function validateChatCompletionPayload(body = {}, config = loadQwenProxyConfig()) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { ok: false, message: 'request body must be an object' };
-  }
-
-  if (!Array.isArray(body.messages) || body.messages.length === 0) {
-    return { ok: false, message: 'messages must be a non-empty array' };
-  }
-
-  if (body.messages.length > config.maxChatMessages) {
-    return { ok: false, message: 'messages exceeds the configured limit' };
-  }
-
-  for (const field of DISALLOWED_TOKEN_LIMIT_FIELDS) {
-    if (body[field] !== undefined) {
-      return { ok: false, message: `${field} is not supported; use max_tokens` };
-    }
-  }
-
-  if (body.stream !== undefined && body.stream !== false) {
-    return { ok: false, message: 'streaming responses are not supported' };
-  }
-
-  if (body.n !== undefined && body.n !== 1) {
-    return { ok: false, message: 'n must be 1' };
-  }
-
-  if (body.best_of !== undefined && body.best_of !== 1) {
-    return { ok: false, message: 'best_of must be 1' };
-  }
-
-  if (body.max_tokens !== undefined && body.max_tokens !== null) {
-    const maxTokens = Number(body.max_tokens);
-    if (!Number.isInteger(maxTokens) || maxTokens < 1) {
-      return { ok: false, message: 'max_tokens must be a positive integer' };
-    }
-
-    if (maxTokens > config.maxChatTokens) {
-      return { ok: false, message: 'max_tokens exceeds the configured limit' };
-    }
-  }
-
-  return { ok: true };
-}
-
-export function normalizeChatCompletionPayload(body = {}, config = loadQwenProxyConfig()) {
-  return {
-    ...body,
-    max_tokens: body.max_tokens === undefined || body.max_tokens === null
-      ? config.maxChatTokens
-      : Number(body.max_tokens),
-    stream: false,
-    ...(body.n === undefined ? {} : { n: 1 }),
-    ...(body.best_of === undefined ? {} : { best_of: 1 })
-  };
-}
 
 function createChatPayloadValidator(config) {
   return (req, res, next) => {

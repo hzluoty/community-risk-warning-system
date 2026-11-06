@@ -22,13 +22,24 @@ pub fn env_lookup(map: &EnvMap) -> impl Fn(&str) -> Option<String> + '_ {
 
 // —— shared/envParsers.js ——
 
-/// JS `Number()` 语义的近似：空白串是 0，解析失败是 NaN（返回 None）。
-fn js_number(s: &str) -> Option<f64> {
+/// JS `Number()` 语义（字符串形态）：空白串是 0，解析失败是 NaN（None）。
+pub fn js_number_str(s: &str) -> Option<f64> {
     let t = s.trim();
     if t.is_empty() {
         return Some(0.0);
     }
     t.parse::<f64>().ok()
+}
+
+/// JS `Number()` 语义（JSON 值形态）：数字直取；字符串 trim 后解析；
+/// 其余（bool/null/object/array）NaN（None）。单一实现 —— proxy 的载荷
+/// max_tokens 归一与 core 的 env 解析共用，避免两份边界语义分叉。
+pub fn js_number_value(value: &serde_json::Value) -> Option<f64> {
+    match value {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => js_number_str(s),
+        _ => None,
+    }
 }
 
 pub fn parse_boolean(value: Option<&str>, fallback: bool) -> bool {
@@ -40,7 +51,7 @@ pub fn parse_boolean(value: Option<&str>, fallback: bool) -> bool {
 
 pub fn parse_integer(value: Option<&str>, fallback: i64, min: i64) -> i64 {
     let Some(v) = value else { return fallback };
-    match js_number(v) {
+    match js_number_str(v) {
         Some(n) if n.is_finite() && n.fract() == 0.0 && n >= min as f64 => n as i64,
         _ => fallback,
     }
@@ -49,7 +60,7 @@ pub fn parse_integer(value: Option<&str>, fallback: i64, min: i64) -> i64 {
 /// 对齐 parseTimeoutOption：必须是整数且不低于最小档位，然后向上取最近的档位。
 pub fn parse_timeout_option(value: Option<&str>, fallback: Duration, options: &[u64]) -> Duration {
     let Some(v) = value else { return fallback };
-    match js_number(v) {
+    match js_number_str(v) {
         Some(n) if n.is_finite() && n.fract() == 0.0 => {
             let parsed = n as i64;
             if parsed < options[0] as i64 {

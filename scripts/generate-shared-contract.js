@@ -37,8 +37,12 @@ import { EVENT_RESPONSE_FORMAT } from '../shared/eventResponseSchema.js'
 import { QWEN_ENDPOINTS } from '../shared/qwenEndpoints.js'
 import { COMPETITION_TASK_IDS } from '../shared/taskIds.js'
 import { ROUTE_PLACEHOLDERS, TOKEN_PLACEHOLDER } from '../shared/apiRoutes.js'
+import {
+  DISALLOWED_TOKEN_LIMIT_FIELDS,
+  PAYLOAD_VALIDATION_DEFAULTS
+} from '../shared/payloadValidation.js'
 import { readFileSync } from 'node:fs'
-import { buildEnvCases, buildRequestBodyCases } from '../shared/contractFixtures.js'
+import { buildEnvCases, buildPayloadValidationCases, buildRequestBodyCases } from '../shared/contractFixtures.js'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 
@@ -60,6 +64,10 @@ export function buildContract() {
       localProxyToken: LOCAL_PROXY_TOKEN_HEADER
     },
     routePlaceholders: { ...ROUTE_PLACEHOLDERS, [TOKEN_PLACEHOLDER]: '' },
+    payloadValidation: {
+      disallowedTokenLimitFields: [...DISALLOWED_TOKEN_LIMIT_FIELDS],
+      defaults: { ...PAYLOAD_VALIDATION_DEFAULTS }
+    },
     // VLM 进程监管参数（llama-server 参数模板 / env 白名单 / 退避常量 / 必需运行时文件）：
     // 源文件 shared/vlmRuntime.json，由 TS（electron/ollamaManager.ts）与 Rust（crws-vlm）
     // 共读 —— check:contract 的字节比对自动覆盖本段（消灭 divergences 的无断言分叉）。
@@ -94,3 +102,4 @@ const writeJson = (file, value) => {
 writeJson(join(sharedDir, 'contract.json'), buildContract())
 writeJson(join(fixturesDir, 'env.json'), buildEnvCases())
 writeJson(join(fixturesDir, 'requestBody.json'), buildRequestBodyCases())
+writeJson(join(fixturesDir, 'payloadValidation.json'), buildPayloadValidationCases())

@@ -66,6 +66,12 @@ pub fn vlm_runtime() -> &'static Value {
     &contract()["vlmRuntime"]
 }
 
+/// chat 载荷校验契约（contract.json 的 payloadValidation 段；
+/// 事实源 shared/payloadValidation.js）：不支持的 token 上限字段表 + 阈值默认。
+pub fn payload_validation() -> &'static Value {
+    &contract()["payloadValidation"]
+}
+
 /// golden 用例占位符表（contract.json 的 routePlaceholders 段，
 /// 事实源：shared/apiRoutes.js 的 ROUTE_PLACEHOLDERS + TOKEN_PLACEHOLDER）。
 /// 返回 (占位符, 展开值) 列表；TOKEN 占位符展开值留空（运行期由 config 填）。

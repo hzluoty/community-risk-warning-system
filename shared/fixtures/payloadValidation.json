@@ -1,0 +1,315 @@
+{
+  "config": {
+    "maxChatMessages": 16,
+    "maxChatTokens": 2048
+  },
+  "cases": [
+    {
+      "name": "accepts-clean-body",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "stream": false
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "accepts-absent-optional-fields",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "accepts-n-one",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "n": 1
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "accepts-best-of-one",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "best_of": 1
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "accepts-null-max-tokens",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "max_tokens": null
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "accepts-string-max-tokens-like-js-number",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "max_tokens": "99"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "name": "rejects-stream-null",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "stream": null
+      },
+      "expected": {
+        "ok": false,
+        "message": "streaming responses are not supported"
+      }
+    },
+    {
+      "name": "rejects-stream-true",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "stream": true
+      },
+      "expected": {
+        "ok": false,
+        "message": "streaming responses are not supported"
+      }
+    },
+    {
+      "name": "rejects-n-null",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "n": null
+      },
+      "expected": {
+        "ok": false,
+        "message": "n must be 1"
+      }
+    },
+    {
+      "name": "rejects-n-false",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "n": false
+      },
+      "expected": {
+        "ok": false,
+        "message": "n must be 1"
+      }
+    },
+    {
+      "name": "rejects-n-two",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "n": 2
+      },
+      "expected": {
+        "ok": false,
+        "message": "n must be 1"
+      }
+    },
+    {
+      "name": "rejects-best-of-null",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "best_of": null
+      },
+      "expected": {
+        "ok": false,
+        "message": "best_of must be 1"
+      }
+    },
+    {
+      "name": "rejects-max-tokens-string-non-numeric",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "max_tokens": "abc"
+      },
+      "expected": {
+        "ok": false,
+        "message": "max_tokens must be a positive integer"
+      }
+    },
+    {
+      "name": "rejects-max-tokens-zero",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "max_tokens": 0
+      },
+      "expected": {
+        "ok": false,
+        "message": "max_tokens must be a positive integer"
+      }
+    },
+    {
+      "name": "rejects-empty-messages",
+      "body": {
+        "messages": []
+      },
+      "expected": {
+        "ok": false,
+        "message": "messages must be a non-empty array"
+      }
+    },
+    {
+      "name": "rejects-disallowed-field-max_completion_tokens",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "max_completion_tokens": 100
+      },
+      "expected": {
+        "ok": false,
+        "message": "max_completion_tokens is not supported; use max_tokens"
+      }
+    },
+    {
+      "name": "rejects-disallowed-field-max_output_tokens",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "max_output_tokens": 100
+      },
+      "expected": {
+        "ok": false,
+        "message": "max_output_tokens is not supported; use max_tokens"
+      }
+    },
+    {
+      "name": "rejects-disallowed-field-max_new_tokens",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "max_new_tokens": 100
+      },
+      "expected": {
+        "ok": false,
+        "message": "max_new_tokens is not supported; use max_tokens"
+      }
+    },
+    {
+      "name": "rejects-disallowed-field-num_predict",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "num_predict": 100
+      },
+      "expected": {
+        "ok": false,
+        "message": "num_predict is not supported; use max_tokens"
+      }
+    },
+    {
+      "name": "rejects-disallowed-field-n_predict",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "ok"
+          }
+        ],
+        "n_predict": 100
+      },
+      "expected": {
+        "ok": false,
+        "message": "n_predict is not supported; use max_tokens"
+      }
+    }
+  ]
+}

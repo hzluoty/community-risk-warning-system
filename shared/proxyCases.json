@@ -98,7 +98,10 @@
           "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
           "body": {
             "messages": [
-              {}
+              {
+                "role": "user",
+                "content": "ok"
+              }
             ],
             "stream": true
           },
@@ -121,9 +124,13 @@
           "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
           "body": {
             "messages": [
-              {}
+              {
+                "role": "user",
+                "content": "ok"
+              }
             ],
-            "max_completion_tokens": 10
+            "max_completion_tokens": 10,
+            "stream": false
           },
           "expectedStatus": 400,
           "expectedBody": {
@@ -144,9 +151,13 @@
           "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
           "body": {
             "messages": [
-              {}
+              {
+                "role": "user",
+                "content": "ok"
+              }
             ],
-            "n": 2
+            "n": 2,
+            "stream": false
           },
           "expectedStatus": 400,
           "expectedBody": {
@@ -167,10 +178,76 @@
           "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
           "body": {
             "messages": [
-              {},
-              {},
-              {}
-            ]
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              },
+              {
+                "role": "user",
+                "content": "m"
+              }
+            ],
+            "stream": false
           },
           "expectedStatus": 400,
           "expectedBody": {
@@ -191,9 +268,13 @@
           "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
           "body": {
             "messages": [
-              {}
+              {
+                "role": "user",
+                "content": "ok"
+              }
             ],
-            "max_tokens": 101
+            "max_tokens": 101,
+            "stream": false
           },
           "expectedStatus": 400,
           "expectedBody": {
@@ -1348,6 +1429,113 @@
           "expectedBody": {
             "ok": false,
             "error": "信封负载超过大小限制"
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-rejects-stream-null",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "ok"
+              }
+            ],
+            "stream": null
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "streaming responses are not supported",
+              "type": "invalid_request"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-rejects-n-null",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "ok"
+              }
+            ],
+            "stream": false,
+            "n": null
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "n must be 1",
+              "type": "invalid_request"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-rejects-best-of-null",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "ok"
+              }
+            ],
+            "stream": false,
+            "best_of": null
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "best_of must be 1",
+              "type": "invalid_request"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "chat-rejects-n-false",
+      "config": "default",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "{{QWEN_CHAT_COMPLETIONS_ROUTE}}",
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "ok"
+              }
+            ],
+            "stream": false,
+            "n": false
+          },
+          "expectedStatus": 400,
+          "expectedBody": {
+            "error": {
+              "message": "n must be 1",
+              "type": "invalid_request"
+            }
           }
         }
       ]
